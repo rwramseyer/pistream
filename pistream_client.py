@@ -13,12 +13,14 @@ s.connect((HOST, PORT))
 print("Connected to:", (HOST, PORT))
 
 try:
-    command = input(" > ")
-    s.sendall(command)
-    
-    response = s.recv(8)
-    while "\n" not in data:
-        response += s.recv(8)
-    
+    while True:
+        command = input(" > ") + "\n"
+        s.sendall(command.encode())
+        response = s.recv(1024)
+        if response:
+            print(response.decode())
+        else:
+            break
+
 finally:
     s.close()
