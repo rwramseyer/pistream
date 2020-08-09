@@ -6,24 +6,27 @@
 import socket
 import csv
 import subprocess
-import time 
 
 STREAM_FILE = "stream_options.csv"
-DEBUG = True
-stream_process = None
+DEBUG = False 
 
 def change_stream(stream_id):
     stream = get_current_streams()[stream_id]
         
     print("changing stream to", stream)
     stream_url = stream[1]
+    
+    # terminate old stream_process
+    global stream_process
+    if stream_process:
+        stream_process.terminate()
 
+    # create new process
     if DEBUG:
         process = subprocess.Popen(["chromium-browser", stream_url])
     else:
         process = subprocess.Popen(["chromium-browser", "--kiosk", stream_url])
 
-    # update global variable 
     stream_process = process
     
 
@@ -44,64 +47,79 @@ def get_current_streams():
 
     return streams 
 
-def accept_connections():
+def accept_connection():
 
     # init socket
     s = socket.socket()
-    server_addr = ('localhost', 12019)
+    server_addr = ('pifour.local', 12019)
     s.bind(server_addr)
     s.listen(1)
     print("started server on", server_addr)
-
-    while True:
-        connection, client_addr = s.accept()
-        try:
-            print("connection from", client_addr)
-
-            message = "" 
-            while True:
-                data = connection.recv(1024)
-                if data:
-                    message += data
-                    print(message)
-                else:
-                    break
-
-            if message:
-                reply = execute_command(message)
-                connection.sendall(reply) 
-
-        finally:
-            connection.close()
     
-def execute_command(message):
+    try:
+        # loop for getting connections
+        while True:
+            connection, client_addr = s.accept()
+            try:
+                print("connection from", client_addr)
+                # loop for a single connection/interaction
+                while True:
+                    data = connection.recv(1024)
+                    if data:
+                        reply = execute_command(data.decode())
+                        connection.sendall(reply.encode()) 
+                    else:
+                        break
+            finally:
+                connection.close()
+    except Exception as e:
+        print(e)
+        s.close()
+    
+def execute_command(command):
     """Commands should come in form 'command argument'"""
 
-    msg_parts = message.split(" ")
-    command = msg_parts[0]
-    print("recieved command", command)
+    command = command.strip('\n')
+    print("Received command", command)
     
     if command == "list":
         # send list of streams available and IDs for selection
-        pass
-    elif command == "change":
-        pass
+
+        streams = get_current_streams()
+        reply = "\n".join(["{}) {}".format(i, streams[i][0]) for i in range(len(streams))])
+
+    elif "change" in command:
+        try:
+            parts = command.split(" ")
+            stream_id = int(parts[1])
+            change_stream(stream_id)
+            reply = "OK"
+
+        except Exception as e:
+            print(e)
+            reply = "Error: bad command"
+
     elif command == "help":
         reply = "Commands\n"
         reply += "list: lists all streams available"
         reply += "change <stream_ID>: directs server to change active stream to specified"
+
     else:
         print("Received unknown command")
-        reply = "Error: unkown command"        
+        reply = "Error: unknown command"        
 
+    print("replying", reply)
     return reply
      
 def main():
     # start default stream
+    global stream_process
+    stream_process = None
     change_stream(0)
     
     accept_connection()
 
+    stream_process.terminate()
 
 if __name__ == "__main__":
     main()
